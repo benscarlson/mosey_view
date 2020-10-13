@@ -3,13 +3,13 @@
 library(here)
 
 library(DBI)
+library(glue)
 library(lubridate)
 library(leaflet)
 library(RSQLite)
 library(shiny)
 library(shinyTree)
 library(tidyverse)
-#library(shinyWidgets)
 
 filter <- dplyr::filter
 select <- dplyr::select
@@ -17,66 +17,42 @@ here <- here::here
 
 source(here('funs/listtree.r'))
 
+#---- Functions ----#
+as_timestamp <- function(x) as.POSIXct(x, format='%Y-%m-%dT%H:%M:%S', tz='UTC')
+
+myLabelFormat = function(...,dates=FALSE){ 
+  if(dates){ 
+    function(type = "numeric", cuts){ 
+      as.Date(cuts, origin="1970-01-01")
+    } 
+  }else{
+    labelFormat(...)
+  }
+}
+
 #---- Parameters ----#
 
-.wd <- '~/projects/geosp_poc/analysis/test1'
-.dbP <- file.path(.wd,'data/database.db')
-
-#debugging.
-#studyIds <- 10157679 #LifeTrack White Stork Tunisia
+.dbP <- '~/projects/movebankdb/analysis/movebankdb/data/movebank.db'
 
 db <- DBI::dbConnect(RSQLite::SQLite(), .dbP)
-# stu <- tbl(db,'study')
 ind_ <- tbl(db,'individual')
 evt_ <- tbl(db, 'event')
 study_ <- tbl(db,'study')
 
-tree_ <- ind_ %>%
-  inner_join(study_ %>% select(study_id,study_name=name), by='study_id') %>%
-  mutate(name=individual_id) %>% #don't have names yet, just use ids
-  #filter(study_id %in% studyIds) %>% 
-  select(study_name,name,value=individual_id) %>% 
+#Really annoying, but shinyTree doesn't return node values, only the names
+# So, the 'value' field below isn't actually used
+# Instead, need to do a reverse lookup based on name using treeDat_
+
+treeDat_ <- ind_ %>%
+  #filter(study_id %in% .debugStudyIds) %>%
+  inner_join(study_ %>% select(study_id,study_name), by='study_id') %>% 
   as_tibble %>%
+  mutate(
+    study_name=glue('{study_name}'),
+    name=glue('{local_identifier} (id:{individual_id})')) %>%
+  select(study_name,name,individual_id)
+
+tree_ <- treeDat_ %>% 
+  select(study_name,name,value=individual_id) %>%
   listTree
-  
-#entIds <- unique(df_$individual_id)
-entIds <- ind_ %>% 
-  filter(study_id %in% studyIds) %>% 
-  distinct(individual_id) %>%
-  as_tibble %>%
-  pluck('individual_id')
 
-# inds <- stu %>% 
-#   select(study_id,name) %>%
-#   filter(name==.study) %>%
-#   inner_join(ind,by='study_id') %>% as_tibble
-# 
-# indNames <- inds %>% 
-#   select(local_identifier) %>% 
-#   arrange(local_identifier) %>%
-#   pluck('local_identifier')
-  
-#tree <- as.list(entIds)
-#names(tree) <- entIds
-
-
-
-
-# indTable <- niches %>%
-#   select(individual_id, niche_name, sex, breeding, eggs, fledglings)
-
-#quick and dirty centroid
-# cenx <- mean(summary(df0$lon)[c(1,6)])
-# ceny <- mean(summary(df0$lat)[c(1,6)])
-# 
-# df <- df0 #%>% filter(niche_name=='Magnus-Jun14')
-
-# minDte <- as.Date('2014-06-01','%Y-%m-%d')
-# maxDte <- as.Date('2014-06-30','%Y-%m-%d')
-#minDte <- as.Date(min(df0$timestamp))
-#maxDte <- as.Date(max(df0$timestamp))
-
-#TODO: look at the niches data frame instead
-#nicheNames <- sort(unique(df$niche_name))
-
-factpal <- colorFactor(topo.colors(length(entIds)), entIds)

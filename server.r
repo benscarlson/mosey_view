@@ -1,43 +1,75 @@
 server <- function(input, output, session){
 
+  output$startDoy <- renderText('Jan-1')
+  output$endDoy <- renderText('Dec-31')
+  
   trackDat <- reactive({
     
-    showEnts <- as.character(get_selected(input$tree,format='classid'))
-    # ifelse(length(showEnts)==0,'',showEnts)
-    # print(showEnts)
-    # print(df_)
-
-    #showEnts <- 10666985 #for debugging
+    doy <- input$doySlider
+    year <- input$yearSlider
     
+    #get month, day for doy, ignoring leap-years
+    x <- as.Date(doy,origin = "2019-01-01")
+    
+    start <- make_date(year[1],month(x[1]),day(x[1]))
+    end <- make_date(year[2],month(x[2]),day(x[2]))
+    
+    snames <- as.character(get_selected(input$tree,format='names'))
+    
+    #---- Returns here if nothing selected ----#
     #Function returns NULL if nothing is selected
-    if(length(showEnts) == 0) return(NULL)
+    if(length(snames) == 0) return(NULL)
     
-    #One event per day
-    sql <- "select *, date(timestamp) as date
+    output$queryDesc <- renderText(glue('Requesting points between {start} and {end}'))
+    
+    showEnts <- treeDat_ %>% filter(name %in% snames) %>% pull('individual_id')
+    
+    if(input$oneperday) {
+      #One event per individual per day
+      sql <- "select *, 
+        date(timestamp) as date
       from event
       where individual_id in ({showEnts*})
-      group by date
+      and date between {start} and {end}
+      group by individual_id, date
       having min(timestamp)
       order by date" %>% glue_sql(.con=db)
+    } else {
+      #All events in the given time frame
+      sql <- "select *, 
+        date(timestamp) as date
+      from event
+      where individual_id in ({showEnts*})
+      and date between {start} and {end}
+      order by timestamp" %>% glue_sql(.con=db)
+    }
 
-    dbGetQuery(db, sql) %>% return
+    message(sql)
+    
+    results <- dbGetQuery(db, sql) %>% 
+      mutate(date=as.Date(date), 
+             timestamp=as_timestamp(timestamp)) %>% #dbGetQuery returns dates & times as strings
+      arrange(individual_id,timestamp)
+    
+    #---- Update results info pane ---#
+    if(nrow(results) != 0) {
 
-    # Remove this code. Using parameterized queries instead
-    # #TODO: this is doing filter after brining all data into memory, so need to fix this
-    # ind_ %>%
-    #   filter(individual_id %in% showEnts) %>% #study_id %in% studyIds &
-    #   select(study_id,individual_id) %>%
-    #   inner_join(evt_, by='individual_id') %>%
-    #   as_tibble %>%
-    #   filter(between(yday(timestamp),input$doySlider[1],input$doySlider[2])) %>%
-    #   group_by(study_id,individual_id) %>% sample_n(500) %>% ungroup %>%
-    #   return
-
+      selStdIds <- ind_ %>% filter(individual_id %in% showEnts) %>%
+        as_tibble %>% pull('study_id') %>% unique
+  
+      output$selectedStudyId <- renderText(glue('Study IDs: {paste(selStdIds,collapse=",")}'))
+      output$dateRange <- renderText(glue('Date range: {min(results$date)} to {max(results$date)}'))
+      output$nPoints <- renderText(glue('Num Points: {nrow(results)}'))
+    } else {
+      output$selectedStudyId <- renderText('No results')
+      output$dateRange <- NULL
+      output$nPoints <- NULL
+    }
+    
+    return(results)
   })
   
   output$tree <- renderTree({tree_})
-  
-  #output$table <- renderTable(indTable)
   
   output$map <- renderLeaflet({
     
@@ -52,13 +84,11 @@ server <- function(input, output, session){
       addProviderTiles(
         provider=providers$Esri.WorldImagery,
         options=pto) %>%
-      #fitBounds(~min(lon), ~min(lat), ~max(lon), ~max(lat)) %>%
       addScaleBar(position='topright',
         options=scaleBarOptions(maxWidth=200,imperial=FALSE)) %>%
       addMeasure(primaryLengthUnit='meters',secondaryLengthUnit='kilometers',
                  primaryAreaUnit='sqmeters',secondaryAreaUnit='sqkilometers',
-                 position='topright') #%>%
-      #addLegend('topleft',pal=factpal,values=~niche_name)
+                 position='topright')
     
     return(mp)
   })
@@ -69,22 +99,43 @@ server <- function(input, output, session){
   observe({
     dat <- trackDat()
     
-    if(is.null(dat)) {
-      leafletProxy("map") %>% clearMarkers
+    if(is.null(dat) || nrow(dat)==0) {
+      leafletProxy("map") %>% clearMarkers %>% clearShapes %>% removeControl('legend')
     } else {
-      leafletProxy("map", data = dat) %>%
-        clearMarkers() %>%
-        addCircleMarkers(lng=~lon, lat=~lat, radius=1.5, layerId = ~event_id, 
-          popup=~timestamp) #, color=~factpal(individual_id)
+      
+      #Need to create sf object so that lines can be displayed seperately
+      # turning point geom into lines: https://github.com/r-spatial/sf/issues/321
+      lines <- dat %>% 
+        st_as_sf(coords=c('lon','lat')) %>% 
+        st_set_crs(4326) %>%
+        group_by(individual_id) %>% 
+        summarize(do_union=FALSE,.groups='drop') %>%
+        st_cast('LINESTRING') 
+      
+      
+      #TODO: might want to be able to toggle between coloring by date and coloring by timestamp
+      #Have to use julian day and labFormat in order to get legend to work
+      # See here: https://stackoverflow.com/questions/34234576/r-leaflet-use-date-or-character-legend-labels-with-colornumeric-palette
+      
+      pal <- colorNumeric(
+        palette = "plasma",
+        domain = dat$julian)
+      
+      dat %>%
+        mutate(julian=as.numeric(date)) %>%
+      leafletProxy("map", data = .) %>%
+        clearMarkers %>%
+        clearShapes %>% #clears all polylines
+        removeControl('legend') %>%
+        addPolylines(data=lines,weight=2) %>%
+        addCircleMarkers(lng=~lon, lat=~lat, radius=2, layerId = ~event_id,
+          popup=~timestamp, color=~pal(date),opacity=0.8) %>% #%>% #, color=~factpal(individual_id)
+        addLegend('topleft',pal=pal,values=~julian,layerId='legend',title='Timestamp',
+                  labFormat = myLabelFormat(dates=TRUE))
+        #fitBounds(min(dat$lon), min(dat$lat), max(dat$lon), max(dat$lat))
+
     }
   })
   
-  #Example of how to observe an event
-  # observeEvent(input$map_marker_click, { 
-  #   p <- input$map_marker_click  # typo was on this line
-  #   print(p)
-  # })
-  
+  message('Server complete')
 }
-
-#Esri.WorldImagery

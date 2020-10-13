@@ -16,6 +16,8 @@
 #   Names=letters[1:8],
 #   Values=1:8)
 
+#' Recursively walks down the columns of a dataframe
+#' Making nested groups
 listTree <- function(dat) {
   if(ncol(dat) > 2) {
     x <- dat %>% nest(data=-1)

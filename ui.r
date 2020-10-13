@@ -1,5 +1,6 @@
 ui <- fluidPage(
-  
+  tags$script(src="script.js"),
+    
   titlePanel('Movement Track Viewer'),
   
   sidebarLayout(
@@ -7,20 +8,31 @@ ui <- fluidPage(
       width = 3,
 
       # Add a Slider Input to select doy
-      sliderInput("doySlider", "Select Day of Year",
-                  min = 0, max = 365, value = c(0,365)),
-      # Add a Slider Input to select date range
-      # sliderInput("Date_range_selector", "Select Date Range",
-      #             min = minDte, max = maxDte, value = c(minDte,maxDte)),
+      # UI ignores leap-years
+      # 1-365 is more intuitive so use this in UI
+      # Also sqlite (%j parameter), and JS are 1-indexed (1-365, non-leap year), 
+      #   but R is 0-indexed (0-364, non-leap-year)
+      splitLayout(
+        htmlOutput('startDoy'),
+        htmlOutput('endDoy')
+      ),
+      sliderInput("doySlider", "Day of year",
+                  min = 1, max = 365, value = c(1,365)),
+      sliderInput('yearSlider','Year',
+                  min = 2008, max = 2020, step=1, sep='', value=c(2008,2020)),
+      textOutput('queryDesc'),
+      checkboxInput("oneperday", "Show one location per day", TRUE),
       
-      #checkboxGroupInput("individual_selector", "Show individual:", nicheNames, nicheNames)
-      # prettyCheckboxGroup(inputId="individual_selector", label="Show individual:",
-      #   choiceNames=entNames, choiceValues=entNames, selected=entNames, outline=TRUE)
-      # column(3,
-      #   tableOutput('table')
-      # )
-      
-      shinyTree('tree',checkbox=TRUE)
+      wellPanel(
+        p('Results info:'),
+        textOutput('selectedStudyId'),
+        textOutput('dateRange'),
+        textOutput('nPoints'),
+      ),
+      wellPanel(
+        style = "height:500px; overflow-y:scroll; overflow-x:scroll",
+        shinyTree('tree',checkbox=TRUE)
+      )
     ),
     
     mainPanel(
@@ -28,8 +40,6 @@ ui <- fluidPage(
       width = 9
     )
   )
-  
-
 )
 
 
