@@ -19,16 +19,20 @@ ui <- fluidPage(
       sliderInput("doySlider", "Day of year",
                   min = 1, max = 365, value = c(1,365)),
       sliderInput('yearSlider','Year',
-                  min = 2008, max = 2020, step=1, sep='', value=c(2008,2020)),
+                  min = 2008, max = 2021, step=1, sep='', value=c(2008,2020)),
       textOutput('queryDesc'),
       checkboxInput("oneperday", "Show one location per day", TRUE),
+      selectInput('colorfield',"Color by",list('timestamp','individual_id','outlier')), #,
       
       wellPanel(
         p('Results info:'),
         textOutput('selectedStudyId'),
+        textOutput('individualName'),
+        textOutput('individualId'),
         textOutput('dateRange'),
         textOutput('nPoints'),
       ),
+      #checkboxInput("filtertree", "Filter individuals using date selection", TRUE),
       wellPanel(
         style = "height:500px; overflow-y:scroll; overflow-x:scroll",
         shinyTree('tree',checkbox=TRUE)

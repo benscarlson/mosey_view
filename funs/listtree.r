@@ -32,17 +32,3 @@ listTree <- function(dat) {
     stop('ERROR')
   }
 }
-
-# #only works for three levels. could make this more general by making it recursive.
-# #splits by each consequtive column to make nested lists of lists
-# listTree <- function(dat) {
-#   lstTree <- lapply(split(dat,dat[[1]]),function(dat) { #note the 'x' here is a dataframe
-#     dat <- dat[-1]
-#     lapply(split(dat,dat[[1]]),function(dat) {
-#       dat <- dat[-1]
-#       return(sapply(dat[[1]],simplify=FALSE,USE.NAMES=TRUE,function(x){''}))
-#     })
-#   })
-# 
-#   return(lstTree)
-# }

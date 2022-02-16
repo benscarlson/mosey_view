@@ -1,24 +1,30 @@
-#This is the global file that looks at the movebank database
+#This is the global file that looks at a mosey_db database
 
-library(here)
+suppressWarnings(
+  suppressPackageStartupMessages({
+    library(assertthat)
+    library(conflicted)
+    library(DBI)
+    library(fasttime)
+    library(glue)
+    library(here)
+    library(lubridate)
+    library(leaflet)
+    library(leafpop)
+    library(RSQLite)
+    library(sf)
+    library(shiny)
+    library(shinyTree)
+    library(tidyverse)
+}))
 
-library(DBI)
-library(glue)
-library(lubridate)
-library(leaflet)
-library(RSQLite)
-library(shiny)
-library(shinyTree)
-library(tidyverse)
+conflict_prefer('filter','dplyr',quiet=TRUE)
+conflict_prefer('select','dplyr',quiet=TRUE)
 
-filter <- dplyr::filter
-select <- dplyr::select
-here <- here::here
-
-source(here('funs/listtree.r'))
+source(here::here('src/funs/listtree.r'))
 
 #---- Functions ----#
-as_timestamp <- function(x) as.POSIXct(x, format='%Y-%m-%dT%H:%M:%S', tz='UTC')
+#as_timestamp <- function(x) as.POSIXct(x, format='%Y-%m-%dT%H:%M:%S', tz='UTC')
 
 myLabelFormat = function(...,dates=FALSE){ 
   if(dates){ 
@@ -32,17 +38,20 @@ myLabelFormat = function(...,dates=FALSE){
 
 #---- Parameters ----#
 
-.dbP <- '~/projects/movebankdb/analysis/movebankdb/data/movebank.db'
+.dbPF <- '~/projects/ms2/analysis/main/data/mosey.db'
 
-db <- DBI::dbConnect(RSQLite::SQLite(), .dbP)
+invisible(assert_that(file.exists(.dbPF)))
+db <- DBI::dbConnect(RSQLite::SQLite(), .dbPF)
+invisible(assert_that(length(dbListTables(db))>0))
+
 ind_ <- tbl(db,'individual')
 evt_ <- tbl(db, 'event')
 study_ <- tbl(db,'study')
+#evtstat_ <- tbl(db,'event_indiv_stats')
 
 #Really annoying, but shinyTree doesn't return node values, only the names
 # So, the 'value' field below isn't actually used
 # Instead, need to do a reverse lookup based on name using treeDat_
-
 treeDat_ <- ind_ %>%
   #filter(study_id %in% .debugStudyIds) %>%
   inner_join(study_ %>% select(study_id,study_name), by='study_id') %>% 
@@ -50,7 +59,8 @@ treeDat_ <- ind_ %>%
   mutate(
     study_name=glue('{study_name}'),
     name=glue('{local_identifier} (id:{individual_id})')) %>%
-  select(study_name,name,individual_id)
+  select(study_name,name,individual_id) %>%
+  arrange(study_name,individual_id)
 
 tree_ <- treeDat_ %>% 
   select(study_name,name,value=individual_id) %>%
